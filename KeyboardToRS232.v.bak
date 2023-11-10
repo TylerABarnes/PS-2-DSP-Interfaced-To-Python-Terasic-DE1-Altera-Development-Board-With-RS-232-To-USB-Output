@@ -1,0 +1,75 @@
+
+//Be careful with port names, Verilog is case sensitive
+module KeyboardToRS232(
+    input wire PS2_DAT,        // PS/2 data pin
+    input wire PS2_CLK,        // PS/2 clock pin
+	 
+	 //Baud Rate is 115200, 8 data bits, no parity check bit, 1 stop bit, flow control on
+	 //MAX232 Transceiver Chip
+	 input wire UART_RXD        // Reciever 
+	 output wire UART_TXD       // Transmitter
+	 
+    input wire CLOCK_50,       // 50 MHz system clock
+    output wire [9:0] LEDR,    // Red LEDs output (10 bits)
+    output wire [7:0] LEDG,    // Green LEDs output (8 bits)
+    output wire [6:0] HEX0     // 7-segment hex display
+);
+
+reg [10:0] shift_reg = 11'b00000000000; // Shift register
+reg inverted_ps2_clock;                 // Inverted PS/2 clock signal
+reg [10:0] synchronized_shift_reg;      // Shift register content synchronized with the system clock
+
+// Function to decode the 11-bit scan code
+function [6:0] decode_scan_code;
+    input [10:0] code;
+    begin
+        case(code)
+            // Top Row Of Numbers
+            11'b01010001001: decode_scan_code = 7'b1000000; // 0
+            11'b00110100001: decode_scan_code = 7'b1111001; // 1
+            11'b00111100011: decode_scan_code = 7'b0100100; // 2
+            11'b00110010001: decode_scan_code = 7'b0110000; // 3
+            11'b01010010001: decode_scan_code = 7'b0011001; // 4
+            11'b00111010011: decode_scan_code = 7'b0010010; // 5
+            11'b00110110011: decode_scan_code = 7'b0000010; // 6
+            11'b01011110001: decode_scan_code = 7'b1111000; // 7
+            11'b00111110001: decode_scan_code = 7'b0000000; // 8
+            11'b00110001001: decode_scan_code = 7'b0010000; // 9
+
+            // Key Pad
+            11'b00000111001: decode_scan_code = 7'b1000000; // 0
+            11'b01001011011: decode_scan_code = 7'b1111001; // 1
+            11'b00100111011: decode_scan_code = 7'b0100100; // 2
+            11'b00101111001: decode_scan_code = 7'b0110000; // 3
+            11'b01101011001: decode_scan_code = 7'b0011001; // 4
+            11'b01100111001: decode_scan_code = 7'b0010010; // 5
+            11'b00010111011: decode_scan_code = 7'b0000010; // 6
+            11'b00011011011: decode_scan_code = 7'b1111000; // 7
+            11'b01010111001: decode_scan_code = 7'b0000000; // 8
+            11'b01011111011: decode_scan_code = 7'b0010000; // 9
+            default: decode_scan_code = 7'b1111111; // Default (blank display)
+        endcase
+    end
+endfunction
+
+initial begin
+    inverted_ps2_clock = 0; // Initialize the inverted PS/2 clock
+end
+
+always @(posedge CLOCK_50) begin
+    inverted_ps2_clock <= ~PS2_CLK; // Invert the PS/2 clock signal on the rising edge of the 50 MHz clock
+end
+
+always @(posedge inverted_ps2_clock) begin
+    shift_reg <= {shift_reg[9:0], PS2_DAT}; // Shift and concatenate new data bit on the inverted PS/2 clock's rising edge
+end
+
+always @(posedge CLOCK_50) begin
+    synchronized_shift_reg <= shift_reg; // Capture the shift register's content on the rising edge of the 50 MHz system clock
+end
+
+assign LEDR = synchronized_shift_reg[9:0]; // Output the first 10 bits of the synchronized data to the red LEDs
+assign LEDG[7] = synchronized_shift_reg[10]; // Output the 11th bit to the green LED (ledg7)
+assign HEX0 = decode_scan_code(synchronized_shift_reg); // Decode the 11-bit scan code and display on the rightmost 7-segment hex display
+
+endmodule
